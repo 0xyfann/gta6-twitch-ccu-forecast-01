@@ -37,6 +37,15 @@ const SD_FLOOR = 0.1;
 const SD_CAP = 2.5;
 /** Local-linear slope is clamped to this magnitude (guards extrapolation). */
 const SLOPE_CAP = 1;
+/**
+ * Shrinkage on the fitted slope (0.8): the log-ratio/log-h1 slope is noisy
+ * and GTA VI's hour 1 may sit above every comparable, so the slope is pulled
+ * 20% toward flat. Leave-one-out over the comparables: 0.3765 vs 0.3785
+ * unshrunk (all launches), 0.2547 vs 0.2593 (hour-1 >= 20k only).
+ */
+const SLOPE_SHRINK = 0.8;
+/** Small spread shrinkage, same leave-one-out comparison. */
+const SD_MULT = 0.95;
 
 type HourlyPoint = { from: string; viewers: number | null; channels?: number | null };
 type Comparable = { day_start: string; hourly: HourlyPoint[] };
@@ -147,7 +156,7 @@ function forecastCase(c: CaseFile): Array<{ hour: number; q: number[] }> {
           den += pt.w * (pt.x - mx) * (pt.x - mx);
           num += pt.w * (pt.x - mx) * (pt.y - my);
         }
-        const slope = clamp(den > 1e-12 ? num / den : 0, -SLOPE_CAP, SLOPE_CAP);
+        const slope = clamp(den > 1e-12 ? num / den : 0, -SLOPE_CAP, SLOPE_CAP) * SLOPE_SHRINK;
         const intercept = my - slope * mx;
         centre = intercept + slope * xg;
         let varSum = 0;
@@ -155,7 +164,7 @@ function forecastCase(c: CaseFile): Array<{ hour: number; q: number[] }> {
           const r = pt.y - (intercept + slope * pt.x);
           varSum += pt.w * r * r;
         }
-        sd = clamp(Math.sqrt(varSum / sw), SD_FLOOR, SD_CAP);
+        sd = clamp(Math.sqrt(varSum / sw), SD_FLOOR, SD_CAP) * SD_MULT;
       } else {
         // Too few comparables report this hour: pooled median + fixed spread.
         const rs = curves
